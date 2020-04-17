@@ -22,7 +22,14 @@ export const convert = (app, fileIndex) => {
     var data = [];
 
     app.iterateRegions((region) => {
-        data.push(`SPEAKER <NA> <NA> ${region.start.toFixed(2)} ${(region.end - region.start).toFixed(2)} <NA> <NA> ${self.formatSpeaker(region.data.speaker)} <NA> <NA>`)
+        //different speaker behavior for rttm to get better DER of overlapping speakers
+        if (region.data.speaker.length > 1) {
+            for (let speakerId of region.data.speaker) {
+                data.push(`SPEAKER <NA> <NA> ${region.start.toFixed(2)} ${(region.end - region.start).toFixed(2)} <NA> <NA> ${speakerId} <NA> <NA>`)
+            }
+        }   else {
+            data.push(`SPEAKER <NA> <NA> ${region.start.toFixed(2)} ${(region.end - region.start).toFixed(2)} <NA> <NA> ${self.formatSpeaker(region.data.speaker)} <NA> <NA>`)
+        }
     }, fileIndex, true);
 
     return data.join('\n');
