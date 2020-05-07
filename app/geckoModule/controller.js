@@ -1225,7 +1225,12 @@ class MainController {
                 // check overlapping with accuracy up to 5 decimal points
                 // else if (last_end > start + 0.00001) {
                 if (last_end > start + constants.TOLERANCE) {
-                    console.error(`overlapping monologues. file index: ${fileIndex} time: ${last_end.toFixed(2)}`);
+                    // TODO: display hrs if needed
+                    var visual_last_end = '';
+                    if (last_end >= 60) {
+                       visual_last_end = ~~(last_end/60) + ':' + String(~~(last_end%60)).padStart(2,'0');
+                    }
+                    console.error(`overlapping monologues. file index: ${fileIndex} time: ${visual_last_end} (${last_end.toFixed(2)}s)`);
                 }
 
                 last_end = end;
@@ -1505,7 +1510,12 @@ class MainController {
                 }
 
                 if (last_end > region.start + constants.TOLERANCE) {
-                    throw `Overlapping in file: ${self.filesData[fileIndex].filename}. \n Time: ${last_end.toFixed(2)}`;
+                    // TODO: display hrs if needed
+                    var visual_last_end = '';
+                    if (last_end >= 60) {
+                       visual_last_end = ~~(last_end/60) + ':' + String(~~(last_end%60)).padStart(2,'0');
+                    }
+                    throw `Overlapping in file: ${self.filesData[fileIndex].filename}. \n Time: ${visual_last_end} (${last_end.toFixed(2)}s)`;
                 }
                 last_end = region.end;
             }, fileIndex, true)
