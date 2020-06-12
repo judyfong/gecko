@@ -96,8 +96,8 @@ export const convert = (app, fileIndex) => {
         }
         data.monologues.push({
             speaker: {id: self.formatSpeaker(region.data.speaker)},
-            start: region.start,
-            end: region.end,
+            start: region.start.toFixed(3),
+            end: region.end.toFixed(3),
             terms: terms
         });
 

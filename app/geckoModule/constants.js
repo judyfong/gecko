@@ -95,7 +95,7 @@ export const PUNCTUATIONS = ". ! , … ?".split(' ');
 export const PUNCTUATION_TYPE = "PUNCTUATION"
 export const WORD_TYPE = "WORD"
 
-export const TOLERANCE = 0.00001;
+export const TOLERANCE = 0.01;
 
 export const DEFAULT_GAIN = 1
 export const MIN_GAIN = 0
