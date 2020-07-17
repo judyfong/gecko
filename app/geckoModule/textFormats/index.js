@@ -5,6 +5,7 @@ import { parse as parseRTTM, convert as convertRTTM } from './rttm'
 import { parse as parseTSV, convert as convertTSV } from './tsv'
 import { parse as parseJSON, convert as convertJSON } from './json'
 import { parse as parseSRT, convert as convertSRT } from './srt'
+import { parse as parseCSV, convert as convertCSV } from './csv'
 
 const parse = (filename, data, app, parserOptions, ...args) => {
     const ext = filename.substr(filename.lastIndexOf('.') + 1);
@@ -42,6 +43,9 @@ const convert = (format, parent, parserOptions, ...args) => {
             return (fileIndex) => convertCTM(parent, fileIndex, parserOptions)
         case 'srt':
             return (fileIndex) => convertSRT(parent, fileIndex, parserOptions)
+        case 'csv':
+            return (fileIndex) => convertCSV(parent, fileIndex, parserOptions)
+    
         default:
             alert('format ' + ext + ' is not supported')
             return () => ''
