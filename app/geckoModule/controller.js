@@ -6,7 +6,7 @@ import videojs from 'video.js'
 import * as constants from './constants'
 import initWaveSurfer from './wavesurfer.js'
 
-import {config} from './config.js'
+import { config } from './config.js'
 
 import Shortcuts from './shortcuts'
 import wavesurferEvents from './waveSurferEvents'
@@ -149,7 +149,7 @@ class MainController {
         this.loadUserConfig()
     }
 
-    loadUserConfig () {
+    loadUserConfig() {
         let localConf = {}
 
         try {
@@ -284,7 +284,7 @@ class MainController {
         this.wavesurfer.on('pause', () => wavesurferEvents.pause(this))
     }
 
-    bindDummyRegionEvents () {
+    bindDummyRegionEvents() {
         this.isDrag = false
 
         this.wavesurfer.drawer.wrapper.addEventListener('mousedown', (e) => {
@@ -371,7 +371,7 @@ class MainController {
         }
     }
 
-    async saveToDB (e) {
+    async saveToDB(e) {
         if (!config.enableDrafts) {
             return
         }
@@ -391,7 +391,7 @@ class MainController {
                 filesData[filesData.length - 1].data.push({
                     end: region.end,
                     start: region.start,
-                    speaker: { id: region.data.speaker.join('+')},
+                    speaker: { id: region.data.speaker.join('+') },
                     words: region.data.words.map(w => {
                         return {
                             start: w.start,
@@ -596,7 +596,7 @@ class MainController {
     }
 
     insertDummyRegion() {
-        const {dummyRegion} = this
+        const { dummyRegion } = this
         const truncateRegions = []
 
         this.iterateRegions(region => {
@@ -799,7 +799,7 @@ class MainController {
             this.contextMenuFileIndex = 0
             return
         }
-        
+
         if (e.target.tagName === 'REGION') {
             const regionId = e.target.getAttribute('data-id')
             const region = this.getRegion(regionId)
@@ -816,8 +816,8 @@ class MainController {
                 this.contextMenuFileIndex = index
             }
         }
-    
-        
+
+
     }
 
     calcCurrentFileIndex(e) {
@@ -1051,7 +1051,7 @@ class MainController {
         })
 
         self.filesData.forEach(fileData => {
-            fileData.legend = [ ...speakersColors ]
+            fileData.legend = [...speakersColors]
 
             fileData.data.forEach(monologue => {
                 if (!monologue.speaker.id) return;
@@ -1082,7 +1082,7 @@ class MainController {
                     if (!found) {
                         const newSpeaker = {
                             value: s,
-                            color : this.fileSpeakerColors && this.fileSpeakerColors[s] ? this.fileSpeakerColors[s] : null
+                            color: this.fileSpeakerColors && this.fileSpeakerColors[s] ? this.fileSpeakerColors[s] : null
                         }
                         fileData.legend.push(newSpeaker)
                     }
@@ -1133,7 +1133,7 @@ class MainController {
                     // TODO: display hrs if needed
                     var visual_last_end = '';
                     if (last_end >= 60) {
-                       visual_last_end = ~~(last_end/60) + ':' + String(~~(last_end%60)).padStart(2,'0');
+                        visual_last_end = ~~(last_end / 60) + ':' + String(~~(last_end % 60)).padStart(2, '0');
                     }
                     console.error(`overlapping monologues. file index: ${fileIndex} time: ${visual_last_end} (${last_end.toFixed(2)}s)`);
                 }
@@ -1270,9 +1270,9 @@ class MainController {
             this.cancelPlayRegionClick = true
             return
         }
-    
+
         this.playRegionClicked = true
-    
+
         this.$timeout(() => {
             if (this.cancelPlayRegionClick) {
                 this.cancelPlayRegionClick = false;
@@ -1308,7 +1308,7 @@ class MainController {
     }
 
     calcSilenceRegion() {
-        var silence = {start: 0, end: null};
+        var silence = { start: 0, end: null };
         var afterRegion = this.findClosestRegionToTime(this.selectedFileIndex, this.wavesurfer.getCurrentTime());
         var beforeRegion = this.findClosestRegionToTime(this.selectedFileIndex, this.wavesurfer.getCurrentTime(), true);
 
@@ -1370,7 +1370,7 @@ class MainController {
 
                 if (!this.checkValidRegions(i)) return;
                 try {
-                    this.dataManager.saveDataToServer(converter(i), {filename, s3Subfolder: current.s3Subfolder});
+                    this.dataManager.saveDataToServer(converter(i), { filename, s3Subfolder: current.s3Subfolder });
                 } catch (e) {
 
                 }
@@ -1385,7 +1385,14 @@ class MainController {
     }
 
     saveClient(extension) {
-        this.save(extension, convertTextFormats(extension, this, config.parserOptions))
+        this.save(extension, convertTextFormats(extension, this, config.parserOptions)).catch(
+            (error) => {
+                Swal.fire({
+                    icon: 'error',
+                    title: "Save error",
+                    text: error
+                })
+            });
     }
 
     checkValidRegions(fileIndex) {
@@ -1401,7 +1408,7 @@ class MainController {
                     // TODO: display hrs if needed
                     var visual_last_end = '';
                     if (last_end >= 60) {
-                       visual_last_end = ~~(last_end/60) + ':' + String(~~(last_end%60)).padStart(2,'0');
+                        visual_last_end = ~~(last_end / 60) + ':' + String(~~(last_end % 60)).padStart(2, '0');
                     }
                     throw `Overlapping in file: ${self.filesData[fileIndex].filename}. \n Time: ${visual_last_end} (${last_end.toFixed(2)}s)`;
                 }
@@ -1531,15 +1538,15 @@ class MainController {
         this.newSpeakerName = ''
     }
 
-// WARNING: Does not work well. after resize there's a dragging problem for regions
-// resizeWavesurfer(e) {
-//     var currentHeight = e.currentTarget.offsetHeight - 10;
-//
-//     if (this.previousHeight && currentHeight !== this.previousHeight) {
-//         this.previousHeight = currentHeight;
-//         this.wavesurfer.setHeight(currentHeight);
-//     }
-// }
+    // WARNING: Does not work well. after resize there's a dragging problem for regions
+    // resizeWavesurfer(e) {
+    //     var currentHeight = e.currentTarget.offsetHeight - 10;
+    //
+    //     if (this.previousHeight && currentHeight !== this.previousHeight) {
+    //         this.previousHeight = currentHeight;
+    //         this.wavesurfer.setHeight(currentHeight);
+    //     }
+    // }
 
     changeSpeakerColor(fileIndex, speaker, color) {
         var self = this;
@@ -1554,7 +1561,7 @@ class MainController {
         }, fileIndex);
     }
 
-    async loadDraft (draft) {
+    async loadDraft(draft) {
         this.init()
         if (this.dataBase) {
             const dbDraft = await this.dataBase.getDraft(draft)
@@ -1565,7 +1572,7 @@ class MainController {
         }
     }
 
-    async loadServer (config) {
+    async loadServer(config) {
         var self = this;
         if (self.wavesurfer) self.wavesurfer.destroy();
         self.init()
@@ -1601,7 +1608,7 @@ class MainController {
                     confirmButtonColor: '#3085d6',
                     cancelButtonColor: '#d33',
                     confirmButtonText: 'Select draft'
-                  }).then(async (result) => {
+                }).then(async (result) => {
                     if (result.value) {
                         if (this.dataBase) {
                             const drafts = await this.dataBase.getDrafts(1)
@@ -1618,7 +1625,7 @@ class MainController {
                     } else {
                         this.loadServer(config)
                     }
-                  })
+                })
             } else {
                 this.loadServer(config)
             }
@@ -1637,10 +1644,10 @@ class MainController {
         });
     }
 
-    async loadFromDB (res) {
+    async loadFromDB(res) {
         const mediaFile = res.mediaFile
         const files = res.files
-        
+
         if (files && files.length) {
             this.filesData = files.map((f) => {
                 return {
@@ -1691,12 +1698,12 @@ class MainController {
         this.wavesurfer.seekTo((time + offset) / this.wavesurfer.getDuration());
     }
 
-    jumpNextWord () {
-        
+    jumpNextWord() {
+
     }
 
-    jumpPreviousWord () {
-        
+    jumpPreviousWord() {
+
     }
 
     editableKeysMapping(regionIndex, wordIndex, keys, which) {
@@ -1784,13 +1791,13 @@ class MainController {
         this.calculatePanelsWidth()
     }
 
-    updateZoomTooltip (newVal) {
+    updateZoomTooltip(newVal) {
         if (newVal) {
             this.zoomTooltip.update()
         }
     }
 
-    setContextMenuRegion (region) {
+    setContextMenuRegion(region) {
         if (!region) {
             this.contextMenuRegion = null
             return
@@ -1801,7 +1808,7 @@ class MainController {
         this.contextMenuRegion = region
     }
 
-    setContextMenuRegions (eventX) {
+    setContextMenuRegions(eventX) {
         this.contextMenuPrevRegion = null
         this.contextMenuNextRegion = null
 
@@ -1826,7 +1833,7 @@ class MainController {
         }, this.contextMenuFileIndex)
     }
 
-    fillRegion (speaker, event) {
+    fillRegion(speaker, event) {
         if (this.contextMenuNextRegion || this.contextMenuPrevRegion) {
             const start = this.contextMenuPrevRegion ? this.contextMenuPrevRegion.end : 0
             const end = this.contextMenuNextRegion ? this.contextMenuNextRegion.start : this.wavesurfer.getDuration()
@@ -1845,7 +1852,7 @@ class MainController {
                     initFinished: true,
                     fileIndex: this.contextMenuFileIndex,
                     speaker: [speaker.value],
-                    words: [{start, end, text: '', uuid: uuidv4()}]
+                    words: [{ start, end, text: '', uuid: uuidv4() }]
                 },
                 drag: false,
                 minLength: constants.MINIMUM_LENGTH
@@ -1855,19 +1862,19 @@ class MainController {
         }
     }
 
-    contextMenuSpeakerClicked (speaker, event) {
+    contextMenuSpeakerClicked(speaker, event) {
         this.speakerChanged(speaker, true, event)
         event.stopPropagation()
     }
 
-    calculatePanelsWidth (initial = false) {
+    calculatePanelsWidth(initial = false) {
         if (initial) {
             this.filesData.forEach(fd => {
                 if (this.userConfig.showTranscriptFiles[fd.filename] !== false && this.userConfig.showTranscriptFiles[fd.filename] !== true) {
                     this.userConfig.showTranscriptFiles[fd.filename] = true
                 }
             })
-        }   
+        }
 
         const { showSegmentLabeling, showTranscriptDifferences, showTranscriptFiles } = this.userConfig
         const showDifferencesPanel = this.discrepancies && showTranscriptDifferences
@@ -1878,10 +1885,10 @@ class MainController {
             this.transcriptPanelSize = parseInt(9 / shownPanels.length)
         } else {
             this.transcriptPanelSize = parseInt(12 / shownPanels.length)
-        }     
+        }
     }
 
-    toggleTextPanel (filename) {
+    toggleTextPanel(filename) {
         this.userConfig.showTranscriptFiles[filename] = !this.userConfig.showTranscriptFiles[filename]
         for (let i = 0; i < this.filesData.length; i++) {
             this.$timeout(() => this.eventBus.trigger('resetEditableWords', this.getCurrentRegion(i)))
@@ -1890,19 +1897,19 @@ class MainController {
         this.saveUserSettings()
     }
 
-    toggleSegmentLabeling () {
+    toggleSegmentLabeling() {
         this.userConfig.showSegmentLabeling = !this.userConfig.showSegmentLabeling
         this.calculatePanelsWidth()
         this.saveUserSettings()
     }
 
-    toggleTranscriptDifferences () {
+    toggleTranscriptDifferences() {
         this.userConfig.showTranscriptDifferences = !this.userConfig.showTranscriptDifferences
         this.calculatePanelsWidth()
         this.saveUserSettings()
     }
 
-    toggleWaveform () {
+    toggleWaveform() {
         this.userConfig.showWaveform = !this.userConfig.showWaveform
         if (this.userConfig.showWaveform) {
             if (!this.isPlaying) {
@@ -1914,16 +1921,16 @@ class MainController {
         this.saveUserSettings()
     }
 
-    saveUserSettings () {
+    saveUserSettings() {
         const serializedSettings = JSON.stringify(this.userConfig)
         window.localStorage.setItem('geckoUserConfig', serializedSettings)
     }
 
-    toggleVideo () {
+    toggleVideo() {
         this.userConfig.showVideo = !this.userConfig.showVideo
         this.saveUserSettings()
     }
-    
+
 }
 
 MainController
