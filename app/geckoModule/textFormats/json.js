@@ -65,9 +65,13 @@ export const parse = (data) => {
 export const convert = (app, fileIndex) => {
     var self = app;
     var data = {schemaVersion: "2.0", monologues: []};
+    
     app.iterateRegions((region) => {
         let words = region.data.words;
         let terms = []
+        let speakers = []
+        //Splitting on comma because the id may include comma becasue of CSV conversion
+        region.data.speaker.forEach(id => speakers.push(id.split(',')[0]))
         if (words) {
             words.forEach(w => {
                 // copy word to cancel references
@@ -95,7 +99,8 @@ export const convert = (app, fileIndex) => {
             })
         }
         data.monologues.push({
-            speaker: {id: self.formatSpeaker(region.data.speaker)},
+        
+            speaker: {id: self.formatSpeaker(speakers)},
             start: region.start.toFixed(3),
             end: region.end.toFixed(3),
             terms: terms
@@ -105,7 +110,7 @@ export const convert = (app, fileIndex) => {
 
     data.colors = {}
     app.filesData[fileIndex].legend.forEach(l => {
-        data.colors[l.value] = l.color
+        data.colors[l.value.split(',')[0]] = l.color
     })
 
     return jsonStringify(data);
