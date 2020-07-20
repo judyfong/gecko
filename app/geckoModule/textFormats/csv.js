@@ -13,16 +13,17 @@ export const convert = (app, fileIndex) => {
             var csvline = `${title},${speaker_id},${speaker_name}`
 
             if(speaker_id[0] == '[' && speaker_id[speaker_id.length - 1] == ']'){
-                console.log("TRUE")
+                continue;
             }
-            console.log(speaker_id)
+            
             if (speaker_id != '' && speaker_name != '' && !isNaN(speaker_id) && speakerId.length == 2
-                && !speaker_ids.includes(speaker_id) || speaker_id[0] == '[' && speaker_id[speaker_id.length - 1] == ']' ) {
+                && !speaker_ids.includes(speaker_id)) {
                    if(!data.includes(csvline) ) {
                     speaker_ids.push(speaker_id)
                     data.push(csvline)
                    }
             }
+
             else {
                 throw "Can't save the CSV file - check your labels. Each label should be on the form: speaker id,speaker name"
             }
