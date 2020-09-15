@@ -1,13 +1,13 @@
 import * as constants from '../constants'
 import { jsonStringify, splitPunctuation } from '../utils'
 
-export const parse = (data) => {
+export const parse = (data, $parent) => {
     if (typeof data === 'string') {
         data = JSON.parse(data)
     }
 
     var monologues = data['monologues'];
-    for (var i = 0; i < monologues.length; i++) {
+    for (var i = 0, l = monologues.length; i < l; i++) {
         var monologue = monologues[i];
 
 
@@ -56,9 +56,18 @@ export const parse = (data) => {
         }
     }
 
+    const words = monologues.reduce((accumulator, currentValue) => {
+        if (currentValue.words) {
+            return [...accumulator, ...currentValue.words]
+        }
+    }, [])
+    
+    $parent.comparsionData.push(words);
+
     if (data['colors']) {
         return [ monologues, data['colors'] ]
     }
+
     return [ monologues, null ];
 }
 

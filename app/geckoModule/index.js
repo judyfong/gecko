@@ -14,7 +14,9 @@ import {
     dataManager,
     dataBase,
     DiscrepancyService,
-    HistoryService
+    HistoryService,
+    Debounce,
+    Store
 } from './services'
 
 import { 
@@ -25,7 +27,8 @@ import {
     editableDirective,
     Checklist,
     fileRead,
-    contextMenu
+    contextMenu,
+    comparsionDirective
 } from './directives'
 
 import { 
@@ -34,7 +37,8 @@ import {
     speakersFilterColor,
     toTrusted,
     toMMSS,
-    secondsToFixed
+    secondsToFixed,
+    secondsToMinutes
 } from './filters'
 
 const geckoModule = angular.module('gecko', [ dropdown, modal, collapse, tooltip, toaster ])
@@ -42,18 +46,21 @@ const geckoModule = angular.module('gecko', [ dropdown, modal, collapse, tooltip
 geckoModule.controller('MainController', MainController);
 
 geckoModule.service('eventBus', ['$timeout', EventBus])
+geckoModule.service('debounce', ['$timeout', '$q', Debounce])
+geckoModule.service('store', Store)
 geckoModule.service('discrepancyService', DiscrepancyService)
 geckoModule.service('historyService', HistoryService)
 geckoModule.service('dataManager', dataManager)
 geckoModule.service('dataBase', dataBase)
 
-geckoModule.directive('editableWords', ['$timeout', 'eventBus', editableWordsDirective])
-geckoModule.directive('proofReadingView', ['$timeout', 'eventBus', proofReadingViewDirective])
+geckoModule.directive('editableWords', ['$timeout', 'eventBus', 'store', editableWordsDirective])
+geckoModule.directive('proofReadingView', ['$timeout', 'eventBus', 'store', proofReadingViewDirective])
 geckoModule.directive('editable', editableDirective)
-geckoModule.directive('playPart', playPartDirective)
+geckoModule.directive('playPart', ['store', playPartDirective])
 geckoModule.directive('miniPlayer', miniPlayerDirective)
 geckoModule.directive('checklistModel', Checklist)
 geckoModule.directive('fileread', fileRead)
+geckoModule.directive('comparsion', ['discrepancyService', comparsionDirective])
 geckoModule.directive('contextMenu', ['$timeout', contextMenu])
 
 geckoModule.filter('mulSearch', mulSearch)
@@ -62,6 +69,6 @@ geckoModule.filter('speakersFilterColor', speakersFilterColor)
 geckoModule.filter('to_trusted', ['$sce', toTrusted])
 geckoModule.filter('toMMSS', toMMSS)
 geckoModule.filter('secondsToFixed', secondsToFixed)
-
+geckoModule.filter('secondsToMinutes', secondsToMinutes)
 
 export default geckoModule

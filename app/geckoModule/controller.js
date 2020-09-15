@@ -1,6 +1,5 @@
 import uuidv4 from 'uuid/v4'
 import Swal from 'sweetalert2'
-import * as Diff from 'diff'
 import videojs from 'video.js'
 
 import * as constants from './constants'
@@ -25,7 +24,9 @@ import {
     parseServerResponse,
     ZoomTooltip,
     prepareLegend,
-    formatTime
+    formatTime,
+    hash,
+    discrepancies
 } from './utils'
 
 import {
@@ -34,7 +35,7 @@ import {
 } from './modals'
 
 class MainController {
-    constructor($scope, $uibModal, toaster, dataManager, dataBase, eventBus, discrepancyService, historyService, $timeout, $interval) {
+    constructor($scope, $uibModal, toaster, dataManager, dataBase, eventBus, historyService, debounce, $timeout, $interval, $sce, store) {
         this.dataManager = dataManager;
         if (config.enableDrafts) {
             this.dataBase = dataBase;
@@ -50,7 +51,6 @@ class MainController {
         this.shortcuts.bindKeys()
         this.toaster = toaster
         this.eventBus = eventBus
-        this.discrepancyService = discrepancyService
         this.historyService = historyService
         this.config = config
 
@@ -59,6 +59,14 @@ class MainController {
         this.zoomTooltip = new ZoomTooltip(this)
 
         this.$scope.$watch(() => this.zoomTooltipOpen, this.updateZoomTooltip.bind(this))
+        this.debouncedUpdate = debounce.throttle(this.update, 300, this)
+
+        this.$sce = $sce
+
+        store.setValue('control', this)
+        this.store = store
+
+        this.timeSpan = document.getElementById('timeSpan')
     }
 
     async loadApp(config) {
@@ -72,22 +80,21 @@ class MainController {
             }
         }
 
+        this.onlyProofreading = !!urlParams.has('OnlyProofreading');
+        // console.log('Proofreading:'+ this.onlyProofreading);
+
         const audio = urlParams.get('audio')
-        let formats = ['rttm', 'tsv', 'json', 'ctm', 'srt']
-        formats = formats.map((f) => {
-            if (urlParams.get(f)) {
-                return {
-                    format: f,
-                    url: urlParams.get(f)
-                }
-            }
-            return null
+        
+        let transcriptParams = ['rttm', 'tsv', 'json', 'ctm', 'srt', 'transcript']
+        transcriptParams = transcriptParams.map((f) => {
+            return urlParams.get(f)
         }).filter(Boolean)
+
         let serverConfig = null
-        if (audio || formats.length) {
+        if (audio || transcriptParams.length) {
             serverConfig = {
                 mode: 'server',
-                ctms: []
+                transcripts: []
             }
 
             if (audio) {
@@ -96,22 +103,26 @@ class MainController {
                 }
             }
 
-            if (formats.length) {
-                serverConfig.ctms = []
-                formats.forEach(f => {
-                    const fileUrls = f.url.split(';')
+            if (transcriptParams.length) {
+                transcriptParams.forEach(f => {
+                    const fileUrls = f.split(';')
                     fileUrls.forEach((fUrl) => {
-                        const fileName = fUrl.split('/').pop().split('.')[0]
-                        serverConfig.ctms.push(
+                        const fileName = fUrl.split('/').pop();
+                        serverConfig.transcripts.push(
                             {
                                 url: fUrl,
-                                fileName: fileName + '.' + f.format
+                                fileName: fileName
                             }
                         )
                     })
                 })
             }
         }
+        const presignedUrl = urlParams.get('presigned_url')
+        if (presignedUrl) {
+            serverConfig.presignedUrl = presignedUrl
+        }
+
         if (config.mode === 'server' || serverConfig) {
             this.loadServerMode(serverConfig ? serverConfig : config);
         } else {
@@ -133,6 +144,9 @@ class MainController {
         this.showSpectrogramButton = false
         this.spectrogramReady = false
         this.currentGainProc = 100
+        this.comparsionData = []
+
+        this.comparsionMode = false
 
         this.lastDraft = null
         this.currentDraftId = 0
@@ -142,9 +156,13 @@ class MainController {
 
         this.isRegionClicked = false;
 
-        this.allRegions = []
+        this.mergedRegions = []
 
         this.cursorRegion = null
+
+        this.editableWords = new Map()
+
+        this.currentEditables = []
 
         this.loadUserConfig()
     }
@@ -188,8 +206,8 @@ class MainController {
 
         this.wavesurfer = initWaveSurfer();
         this.wavesurferElement = this.wavesurfer.drawer.container;
+        this.store.setValue('audioBackend', this.wavesurfer.backend)
 
-        this.ctmData = [];
         this.ready = false;
 
         this.eventBus.on('wordClick', (word, e) => {
@@ -210,6 +228,8 @@ class MainController {
             let currentRegion = this.getRegion(regionId)
             this.historyService.addHistory(currentRegion)
             this.historyService.undoStack.push([constants.REGION_TEXT_CHANGED_OPERATION_ID, regionId])
+
+            // this.resetEditableWords(currentRegion)
 
             this.eventBus.trigger('geckoChanged', {
                 event: 'regionTextChanged',
@@ -407,82 +427,47 @@ class MainController {
         this.dataBase && this.dataBase.updateDraft(this.currentDraftId, filesData)
     }
 
-    handleCtm() {
-        if (this.ctmData.length !== 2 || this.filesData.length !== 2) return;
-
-        let diff = Diff.diffArrays(this.ctmData[0], this.ctmData[1], {
-            comparator: (x, y) => {
-                return x.text === y.text;
-            }
-        });
-
-        // discrepancies is also the indication if we are in ctm comparing mode
-        this.discrepancies = [];
+    handleComparsion() {
+        if (!this.comparsionMode || this.comparsionData.length !== 2 || this.filesData.length !== 2) return
+        this.discrepancies = discrepancies(this.comparsionData[0], this.comparsionData[1])
         this.wavesurfer.params.autoCenter = true;
+    }
 
-        const handleDiscrepancy = (discrepancy, diffItem) => {
-            if (diffItem.removed) {
-                if (discrepancy.old) {
-                    throw 'Does not suppose to happen'
-                }
-                discrepancy.old = diffItem.value;
-            } else {
-                if (discrepancy.new) {
-                    throw 'Does not suppose to happen'
-                }
-                discrepancy.new = diffItem.value;
+    fixRegionsOrderAll () {
+        this.iterateFilesRegionsBatch((region) => {
+            if (region.data.isDummy) {
+                return
             }
-        }
 
-        for (let i = 0, length = diff.length; i < length; i++) {
-            if (diff[i].removed || diff[i].added) {
-                let discrepancy = {};
-                handleDiscrepancy(discrepancy, diff[i])
+            const prev = []
+            const next = []
 
-                i++;
-
-                //check for the other side of the discrepancy
-                if (i < diff.length && (diff[i].removed || diff[i].added)) {
-                    handleDiscrepancy(discrepancy, diff[i])
+            this.iterateFilesRegionsBatch((r, fileIndex) => {
+                if (r.start < region.start - 0.01 && (!prev[fileIndex] || r.start > prev[fileIndex].start) && !r.data.isDummy) {
+                    prev[fileIndex] = r
                 }
 
-                this.discrepancies.push(discrepancy);
-            }
-        }
-
-        this.discrepancies.forEach((discrepancy) => {
-            let oldStart = Infinity;
-            let oldEnd = 0;
-
-            if (discrepancy.old) {
-                discrepancy.oldText = discrepancy.old.map(x => x.text).join(' ');
-                oldStart = discrepancy.old[0].start;
-                oldEnd = discrepancy.old[discrepancy.old.length - 1].end;
-            }
-
-            let newStart = Infinity;
-            let newEnd = 0;
-
-            if (discrepancy.new) {
-                discrepancy.newText = discrepancy.new.map(x => x.text).join(' ');
-                newStart = discrepancy.new[0].start;
-                oldEnd = discrepancy.new[discrepancy.new.length - 1].end;
-            }
-
-            if (newStart > oldStart) {
-                discrepancy.start = oldStart;
+                if (r.end > region.end && (!next[fileIndex] || r.end < next[fileIndex].end) && !r.data.isDummy) {
+                    next[fileIndex] = r
+                }
+            })
+    
+            const prevRegion = prev[region.data.fileIndex]
+            const nextRegion = next[region.data.fileIndex]
+    
+            if (prevRegion) {
+                region.prev = prevRegion.id;
+                prevRegion.next = region.id;
             } else {
-                discrepancy.start = newStart;
+                region.prev = null;
             }
-
-            if (newEnd > oldEnd) {
-                discrepancy.end = newEnd;
+    
+            if (nextRegion) {
+                region.next = nextRegion.id;
+                nextRegion.prev = region.id;
             } else {
-                discrepancy.end = oldEnd;
+                region.next = null;
             }
-
-            discrepancy.startDisp = secondsToMinutes(discrepancy.start);
-            discrepancy.endDisp = secondsToMinutes(discrepancy.end);
         })
     }
 
@@ -550,6 +535,8 @@ class MainController {
                 }
             }
         }
+
+        self.setMergedRegions()
 
         self.regionUpdated(region);
     }
@@ -753,24 +740,123 @@ class MainController {
             this.seek(newRegion.start, 'right')
         }
 
-        this.$timeout(() => {
-            this.setAllRegions()
-            this.eventBus.trigger('rebuildProofReading', this.selectedRegion, this.selectedFileIndex)
+        this.setMergedRegions()
+    }
+
+    update () {
+        const time = this.wavesurfer.getCurrentTime()
+        const currentRegions = []
+        const silenceNext = []
+        const silencePrev = []
+
+        this.iterateFilesRegionsBatch((r, fileIndex) => {
+            if (time >= r.start - constants.TOLERANCE && time <= r.end + constants.TOLERANCE) {
+                currentRegions[fileIndex] = r
+            }
+
+            if (r.end > time && (!silenceNext[fileIndex] || r.end < silenceNext[fileIndex].end) && !r.data.isDummy) {
+                silenceNext[fileIndex] = r
+            }
+
+            if (r.start < time - 0.01 && (!silencePrev[fileIndex] || r.start > silencePrev[fileIndex].start) && !r.data.isDummy) {
+                silencePrev[fileIndex] = r
+            }
         })
+        
+        return {
+            currentRegions,
+            silenceNext,
+            silencePrev
+        }
     }
 
-    updateView() {
-        this.selectRegion()
-        this.silence = this.calcSilenceRegion()
-        this.setCurrentTime()
-        this.setAllRegions()
-        this.calcCurrentRegions()
-        this.discrepancyService.updateSelectedDiscrepancy(this)
+    setCurrentRegions (currentRegions) {
+        for (let i = 0; i < this.filesData.length; i++) {
+            const currentRegion = currentRegions[i];
+            if (currentRegion && currentRegion !== this.currentRegions[i]) {
+                if (this.proofReadingView) {
+                    if (currentRegion !== this.selectedRegion) {
+                        this.resetEditableWords(this.selectedRegion)
+                    }
+                    if (this.isPlaying && config.proofreadingAutoScroll) {
+                        this.eventBus.trigger('proofReadingScrollToRegion', currentRegion)
+                    }
+                } else {
+                    if (currentRegion !== this.selectedRegion) {
+                        this.resetEditableWords(this.selectedRegion)
+                    } else {
+                        this.resetEditableWords(currentRegion)
+                    }
+                }
+            } else if (currentRegion) {
+                const toReset = this.editableWords.get(currentRegion.id)
+                toReset && toReset.resetSelected()
+            }
+            this.currentRegions[i] = currentRegion
+        }
 
-        this.cursorRegion = this.getCurrentRegion(this.selectedFileIndex)
+        if (currentRegions) {
+            this.cursorRegion = currentRegions[this.selectedFileIndex]
+            if (this.selectedRegion) {
+                this.selectedRegion.element.classList.remove('selected-region')
+            }
+            this.selectedRegion = this.cursorRegion
+            this.selectedRegion && this.selectedRegion.element.classList.add('selected-region')
+            this.$timeout(() => {
+                this.updateSelectedWordInFiles()
+            })
+        }
     }
 
-    setAllRegions() {
+    setSilence (silencePrev, silenceNext) {
+        const silence = { start: 0, end: null }
+        const afterRegion = silenceNext[this.selectedFileIndex]
+        const beforeRegion = silencePrev[this.selectedFileIndex]
+
+        if (!afterRegion) {
+            silence.end = this.wavesurfer.getDuration();
+            if (beforeRegion) {
+                silence.start = beforeRegion.end;
+            }
+        } else {
+            silence.end = afterRegion.start;
+        }
+
+        if (beforeRegion) {
+            silence.start = beforeRegion.end;
+        }
+
+        this.silence = silence
+    }
+
+    updateView () {
+        this.debouncedUpdate().then(({ currentRegions, silenceNext, silencePrev }) => {
+            this.setCurrentRegions(currentRegions)
+            this.setSilence(silencePrev, silenceNext)
+            this.setCurrentTime()
+        })
+        this.comparsion && this.comparsion.updateSelectedDiscrepancy()
+    }
+
+
+    speakersFilterColor (items, legend) {
+        if (items && items.length) {
+            const spans = items.map(s => {
+                const legendItem = legend.find(l => l.value === s)
+                return `<span style="color: ${legendItem.color};">${s}</span>`
+            })
+            return spans.join(', ')
+        } else if (items && !items.length) {
+            return 'No speaker'
+        }
+        return ''
+    }
+
+    toMMSS (seconds) {
+        return seconds ? new Date(seconds * 1000).toISOString().substr(14, 5) : '00:00'
+    }
+
+    setMergedRegions() {
         for (let i = 0; i < this.filesData.length; i++) {
             const ret = []
             this.iterateRegions((r) => {
@@ -778,19 +864,30 @@ class MainController {
                     ret.push(r)
                 }
             }, i, true)
-            this.allRegions[i] = ret.reduce((acc, current) => {
+            this.mergedRegions[i] = ret.reduce((acc, current) => {
                 const last = acc[acc.length - 1]
-                if (last && last.length) {
-                    if (angular.equals(last[0].data.speaker, current.data.speaker)) {
-                        last.push(current)
+                if (last && last.regions && last.regions.length) {
+                    if (angular.equals(last.regions[0].data.speaker, current.data.speaker)) {
+                        last.regions.push(current)
                     } else {
-                        acc.push([current])
+                        acc.push({ hash: '', regions: [current] })
                     }
                 } else {
-                    acc.push([current])
+                    acc.push({ hash: '', regions: [current] })
                 }
                 return acc
             }, [])
+
+            for (let j = 0, l = this.mergedRegions[i].length; j < l; j++) {
+                const hashStr = this.mergedRegions[i][j].regions.map(r => r.id).join('-')
+                this.mergedRegions[i][j].hash = hash(hashStr)
+                const firstRegion = this.mergedRegions[i][j].regions[0]
+                const lastRegion = this.mergedRegions[i][j].regions[this.mergedRegions[i][j].regions.length - 1]
+                const speakers =  this.$sce.trustAsHtml(this.speakersFilterColor(firstRegion.data.speaker, this.filesData[i].legend))
+                const timing = `${this.toMMSS(firstRegion.start)}-${this.toMMSS(lastRegion.end)}`
+                this.mergedRegions[i][j].info = this.$sce.trustAsHtml(`<p class="proofreading__speaker">${speakers}</p>
+                                                 <p class="proofreading__timing">${timing}</p>`)
+            }
         }
     }
 
@@ -853,31 +950,12 @@ class MainController {
         }
     }
 
-    calcCurrentRegions() {
-        for (let i = 0; i < this.filesData.length; i++) {
-            const currentRegion = this.getCurrentRegion(i);
-            if (currentRegion && currentRegion !== this.currentRegions[i]) {
-                if (this.proofReadingView) {
-                    if (currentRegion !== this.selectedRegion) {
-                        this.eventBus.trigger('resetEditableWords', currentRegion)
-                    }
-
-                    if (this.isPlaying && config.proofreadingAutoScroll) {
-                        this.eventBus.trigger('proofReadingScrollToRegion', currentRegion)
-                    }
-                } else {
-                    this.eventBus.trigger('resetEditableWords', currentRegion)
-                }
-
-            } else if (!currentRegion) {
-                this.eventBus.trigger('cleanEditableDOM', i)
-            }
-            this.currentRegions[i] = currentRegion
+    resetEditableWords (region, uuid) {
+        if (!region) {
+            return
         }
-
-        this.$timeout(() => {
-            this.updateSelectedWordInFiles()
-        })
+        const toReset = this.editableWords.get(region.id ? region.id : region)
+        toReset && toReset.resetEditableWords()
     }
 
     getCurrentRegion(fileIndex) {
@@ -895,7 +973,7 @@ class MainController {
 
     selectRegion(region) {
         if (!region) {
-            region = this.getCurrentRegion(this.selectedFileIndex);
+            region = this.currentRegions[this.selectedFileIndex]
         }
 
         this.deselectRegion();
@@ -934,31 +1012,35 @@ class MainController {
     updateSelectedWordInFile(fileIndex) {
         var self = this;
 
+        this.currentEditables[fileIndex] && this.currentEditables[fileIndex].resetSelected()
+
         let time = self.wavesurfer.getCurrentTime();
 
         let region = self.currentRegions[fileIndex];
         if (!region) return;
+
+        let editable
+        if (this.proofReadingView) {
+            editable = this.editableWords.get(region.id)
+        } else {
+            editable = this.editableWords.get(`main_${fileIndex}`)
+        }
+
+        editable.resetSelected()
 
         let words = region.data.words;
         if (!words) return;
 
         words.forEach(word => {
             if (word.start <= time && word.end >= time) {
-                let newSelectedWords = document.querySelectorAll(`[word-uuid="${word.uuid}"]`)
-
-                if (newSelectedWords) {
-                    newSelectedWords.forEach(w => w.classList.add('selected-word'))
-                }
+                editable.setSelected(word.uuid)
             }
         });
+
+        this.currentEditables[fileIndex] = editable
     }
 
     updateSelectedWordInFiles() {
-        // unselect words
-        document.querySelectorAll('.selected-word').forEach((elem) => {
-            elem.classList.remove('selected-word');
-        });
-
         for (let i = 0; i < this.filesData.length; i++) {
             this.updateSelectedWordInFile(i);
         }
@@ -977,19 +1059,32 @@ class MainController {
 
         if (sort) {
             regions = sortDict(regions, 'start');
-        }
-
-        Object.keys(regions).forEach(function (key) {
-            var region = regions[key];
-            if (fileIndex !== undefined && region.data.fileIndex !== fileIndex) {
-                return;
+            /* iterate regions as Map */
+            for (var [key, region] of regions) {
+                if (fileIndex !== undefined && region.data.fileIndex !== fileIndex) {
+                    continue
+                }
+                func(region)
             }
-            // if (speaker !== undefined && region.data.speaker !== speaker) {
-            //     return;
-            // }
+        } else {
+            for (key in regions) {
+                const region = regions[key];
+                if (fileIndex !== undefined && region.data.fileIndex !== fileIndex) {
+                    continue
+                }
+                func(region)
+            }
+        }
+    }
 
-            func(region)
-        })
+    iterateFilesRegionsBatch (...funcs) {
+        const regions = this.wavesurfer.regions.list
+        for (let key in regions) {
+            const region = regions[key]
+            funcs.forEach(func => {
+                func(region, region.data.fileIndex)
+            })
+        }
     }
 
     findClosestRegionToTime(fileIndex, time, before) {
@@ -1167,7 +1262,9 @@ class MainController {
 
             self.currentRegions.push(undefined);
         })
-
+        this.fixRegionsOrderAll()
+        this.setMergedRegions()
+        this.updateView()
     }
 
     splitSegment() {
@@ -1206,10 +1303,8 @@ class MainController {
             data: [first.id, second.id, region.id]
         })
 
-        this.$timeout(() => {
-            this.setAllRegions()
-            this.eventBus.trigger('rebuildProofReading', this.selectedRegion, this.selectedFileIndex)
-        })
+        this.setMergedRegions()
+        this.seek(time)
     }
 
     deleteRegionAction(region) {
@@ -1226,12 +1321,9 @@ class MainController {
             data: region
         })
 
-        this.updateView();
+        this.setMergedRegions()
 
-        this.$timeout(() => {
-            this.setAllRegions()
-            this.eventBus.trigger('rebuildProofReading', this.selectedRegion, this.selectedFileIndex)
-        })
+        this.updateView();
     }
 
     __deleteRegion(region) {
@@ -1266,43 +1358,52 @@ class MainController {
     }
 
     playRegion() {
-        if (this.playRegionClicked) {
-            this.cancelPlayRegionClick = true
-            return
-        }
-
-        this.playRegionClicked = true
-
-        this.$timeout(() => {
-            if (this.cancelPlayRegionClick) {
-                this.cancelPlayRegionClick = false;
-                this.playRegionClicked = false;
-                return;
+        try {
+            if (this.playRegionClicked) {
+                this.cancelPlayRegionClick = true
+                return
             }
-
-            if (this.selectedRegion) {
-                this.selectedRegion.play()
-            }
-            // play silence region
-            else {
-                var silence = this.calcSilenceRegion()
-                this.wavesurfer.play(silence.start, silence.end)
-            }
-
+        
+            this.playRegionClicked = true
+        
+            this.$timeout(() => {
+                if (this.cancelPlayRegionClick) {
+                    this.cancelPlayRegionClick = false;
+                    this.playRegionClicked = false;
+                    return;
+                }
+    
+                if (this.selectedRegion) {
+                    this.selectedRegion.play()
+                }
+                // play silence region
+                else {
+                    var silence = this.calcSilenceRegion()
+                    this.wavesurfer.play(silence.start, silence.end)
+                }
+    
+                this.cancelPlayRegionClick = false
+                this.playRegionClicked = false
+            }, 250)
+        } catch (e) {
             this.cancelPlayRegionClick = false
             this.playRegionClicked = false
-        }, 250)
+        }
     }
 
     playRegionFromCurrentTime() {
         this.$timeout(() => {
             if (this.selectedRegion) {
-                this.wavesurfer.play(this.wavesurfer.getCurrentTime(), this.selectedRegion.end)
+                if (this.selectedRegion.end - this.wavesurfer.getCurrentTime() < 0.1) {
+                    this.selectedRegion.play()
+                } else {
+                    this.wavesurfer.play(this.wavesurfer.getCurrentTime(), this.selectedRegion.end)
+                }
             }
             // play silence region
             else {
                 var silence = this.calcSilenceRegion()
-                this.wavesurfer.play(this.wavesurfer.getCurrentTime(), silence.end)
+                this.wavesurfer.play(silence.end - this.wavesurfer.getCurrentTime() < 0.1 ? silence.start : this.wavesurfer.getCurrentTime(), silence.end)
             }
         })
     }
@@ -1311,6 +1412,12 @@ class MainController {
         var silence = { start: 0, end: null };
         var afterRegion = this.findClosestRegionToTime(this.selectedFileIndex, this.wavesurfer.getCurrentTime());
         var beforeRegion = this.findClosestRegionToTime(this.selectedFileIndex, this.wavesurfer.getCurrentTime(), true);
+
+        if (afterRegion && beforeRegion) {
+            if (beforeRegion.end > afterRegion.start) {
+                beforeRegion = this.findClosestRegionToTime(this.selectedFileIndex, beforeRegion.start, true);
+            }
+        }
 
         if (afterRegion === null) {
             silence.end = this.wavesurfer.getDuration();
@@ -1335,7 +1442,7 @@ class MainController {
     setCurrentTime() {
         this.currentTimeSeconds = this.wavesurfer.getCurrentTime()
         this.currentTime = secondsToMinutes(this.currentTimeSeconds)
-        this.$scope.$evalAsync()
+        this.timeSpan.textContent = `${this.currentTime} / ${this.totalTime}`
     }
 
     async save(extension, converter) {
@@ -1370,7 +1477,11 @@ class MainController {
 
                 if (!this.checkValidRegions(i)) return;
                 try {
-                    this.dataManager.saveDataToServer(converter(i), { filename, s3Subfolder: current.s3Subfolder });
+                    if (this.serverConfig && this.serverConfig.presignedUrl) {
+                        this.dataManager.saveToPresigned(converter(i), { url: this.serverConfig.presignedUrl});
+                    } else {
+                        this.dataManager.saveDataToServer(converter(i), {filename, s3Subfolder: current.s3Subfolder});
+                    }
                 } catch (e) {
 
                 }
@@ -1380,8 +1491,9 @@ class MainController {
     }
 
     saveDiscrepancyResults() {
-        this.dataManager.downloadFileToClient(jsonStringify(this.discrepancies),
-            this.filesData[0].filename + '_VS_' + this.filesData[1].filename + '.json');
+        const csv = this.comparsion.discrepancyToCSV()
+        this.dataManager.downloadFileToClient(csv,
+            this.filesData[0].filename + '_VS_' + this.filesData[1].filename + '.csv');
     }
 
     saveClient(extension) {
@@ -1469,10 +1581,8 @@ class MainController {
             data: speaker.value
         })
 
-        this.$timeout(() => {
-            this.setAllRegions()
-            this.eventBus.trigger('rebuildProofReading', currentRegion, isFromContext ? this.contextMenuFileIndex : this.selectedFileIndex)
-        })
+        this.setMergedRegions()
+        this.eventBus.trigger('proofReadingSetSelected')
     }
 
     speakerNameChanged(speaker, oldText, newText) {
@@ -1499,6 +1609,8 @@ class MainController {
             event: 'speakerNameChanged',
             data: [self.selectedFileIndex, oldText, newText, changedRegions]
         })
+
+        this.setMergedRegions()
 
         // notify the undo mechanism to change the legend as well as the regions
         this.historyService.undoStack.push([constants.SPEAKER_NAME_CHANGED_OPERATION_ID, self.selectedFileIndex, oldText, newText, changedRegions]);
@@ -1577,6 +1689,7 @@ class MainController {
         if (self.wavesurfer) self.wavesurfer.destroy();
         self.init()
         self.loader = true
+        self.serverConfig = config
         this.dataManager.loadFileFromServer(config).then(async (res) => {
             parseServerResponse(this, config, res)
 
@@ -1639,6 +1752,9 @@ class MainController {
             if (res) {
                 if (this.wavesurfer) this.wavesurfer.destroy();
                 this.init();
+                if (res.comparsion) {
+                    this.comparsionMode = true
+                }
                 parseAndLoadAudio(this, res);
             }
         });
@@ -1769,7 +1885,7 @@ class MainController {
 
         if (!this.proofReadingView) {
             for (let i = 0; i < this.filesData.length; i++) {
-                this.$timeout(() => this.eventBus.trigger('resetEditableWords', this.getCurrentRegion(i)))
+                this.resetEditableWords(`main_${i}`)
             }
             if (!this.isPlaying) {
                 this.$timeout(() => {
@@ -1781,7 +1897,12 @@ class MainController {
             this.userConfig.showSegmentLabeling = true
             this.userConfig.showTranscriptDifferences = true
         } else {
+            // this.setMergedRegions()
             this.eventBus.trigger('proofReadingScrollToSelected')
+
+            this.$timeout(() => {
+                this.updateSelectedWordInFiles()
+            })
 
             this.userConfig.showWaveform = false
             this.userConfig.showSegmentLabeling = false
@@ -1891,7 +2012,7 @@ class MainController {
     toggleTextPanel(filename) {
         this.userConfig.showTranscriptFiles[filename] = !this.userConfig.showTranscriptFiles[filename]
         for (let i = 0; i < this.filesData.length; i++) {
-            this.$timeout(() => this.eventBus.trigger('resetEditableWords', this.getCurrentRegion(i)))
+            this.$timeout(() => this.resetEditableWords(this.getCurrentRegion(i)))
         }
         this.calculatePanelsWidth()
         this.saveUserSettings()
@@ -1934,7 +2055,7 @@ class MainController {
 }
 
 MainController
-    .$inject = ['$scope', '$uibModal', 'toaster', 'dataManager', 'dataBase', 'eventBus', 'discrepancyService', 'historyService', '$timeout', '$interval'];
+    .$inject = ['$scope', '$uibModal', 'toaster', 'dataManager', 'dataBase', 'eventBus', 'historyService', 'debounce', '$timeout', '$interval', '$sce', 'store'];
 export {
     MainController
 }

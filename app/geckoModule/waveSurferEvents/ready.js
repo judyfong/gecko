@@ -72,12 +72,13 @@ export default (parent) => {
             })
         }
 
+        parent.store.setValue('audioContext', context)
         parent.audioContext = context
     }
 
     initAudioContext()
 
-    parent.handleCtm()
+    parent.handleComparsion()
     parent.calculatePanelsWidth(true)
 
     parent.length = parent.wavesurfer.backend.buffer.length
@@ -101,6 +102,14 @@ export default (parent) => {
     window.onbeforeunload = (event) => {
         return confirm('Confirm refresh')
     };
+
+    parent.setCurrentTime()
+
+    if(parent.onlyProofreading){
+        parent.proofReadingView = false; // toggle changes it to true
+        parent.toggleProofReadingView();
+        parent.toggleSegmentLabeling();
+    }
 
     parent.$scope.$evalAsync();
 }

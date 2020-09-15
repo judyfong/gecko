@@ -29,8 +29,8 @@
         </div>
         <div id="navbar" class="navbar-collapse collapse">
             <ul class="nav navbar-nav">
-                <li class="">
-                    <a>
+                <li>
+                    <a class="audio__filename" title="{{ ctrl.audioFileName }}">
                         <b>Audio filename: </b>
                         {{ ctrl.audioFileName }}
                     </a>
@@ -38,7 +38,7 @@
                 <li class="">
                     <a>
                         <b>Time: </b>
-                        {{ ctrl.currentTime }} / {{ ctrl.totalTime }}
+                        <span id="timeSpan"></span>
                     </a>
                 </li>
                 <li class="" ng-if="ctrl.lastDraft && ctrl.config.enableDrafts">
@@ -262,19 +262,21 @@
                 Toggle Spectrogram
             </button>
 
-            <button class="btn btn-default" ng-click="ctrl.toggleProofReadingView()"
+            <button class="btn btn-default" ng-click="ctrl.toggleProofReadingView()" ng-if="!ctrl.onlyProofreading"
                     title="Show/hide Proofreading View"
                     data-toggle="tooltip" data-placement="top">
                 <i class="glyphicon glyphicon-list-alt"></i>
                 Toggle Proofreading View
             </button>
 
-            <button class="btn btn-primary" ng-click="ctrl.toggleWaveform()" ng-if="ctrl.userConfig.showWaveform"
+            <button class="btn btn-primary" ng-click="ctrl.toggleWaveform()"
+                    ng-if="ctrl.userConfig.showWaveform&&!ctrl.onlyProofreading"
                     title="Toggle waveform">
                 <i class="glyphicon glyphicon-resize-small"></i>
             </button>
 
-            <button class="btn btn-primary" ng-click="ctrl.toggleWaveform()" ng-if="!ctrl.userConfig.showWaveform"
+            <button class="btn btn-primary" ng-click="ctrl.toggleWaveform()"
+                    ng-if="!ctrl.userConfig.showWaveform&&!ctrl.onlyProofreading"
                     title="Toggle waveform"
                     style="margin-left: 1rem;">
                 <i class="glyphicon glyphicon-fullscreen"></i>
@@ -417,8 +419,7 @@
                                 class="speaker-legend">
                                 </span>
                                 <div class="pull-right">
-                                    <play-part audio-context="ctrl.audioContext" audio-backend="ctrl.wavesurfer.backend"
-                                               representative="ctrl.filesData[ctrl.selectedFileIndex].reps[speaker.value]"></play-part>
+                                    <play-part representative="ctrl.filesData[ctrl.selectedFileIndex].reps[speaker.value]"></play-part>
                                     <input type="color" ng-model="speaker.color" class="pull-right"
                                            ng-change="ctrl.changeSpeakerColor(ctrl.selectedFileIndex, speaker.value, speaker.color)"/>
                                 </div>
@@ -461,56 +462,10 @@
                     </button>
                 </div>
                 <div class="panel-body">
-                    <div>
-                        <div class="input-group">
-                            <input type="text" ng-model="searchDiscrepancy" class="form-control"
-                                   placeholder="Filter list...">
-                            <!--
-                            <span class="input-group-btn">
-                                <button class="btn btn-default" type="button"><i class="glyphicon glyphicon-search"></i></button>
-                            </span>
-                            -->
-                            <span class="input-group-btn">
-                                <button ng-if="ctrl.discrepancies" class="btn btn-primary"
-                                        ng-click="ctrl.jumpNextDiscrepancy()" title="Jump to the next difference">
-                                    <i class="glyphicon glyphicon-forward"></i>
-                                    Next
-                                </button>
-                            </span>
-                        </div>
-                    </div>
-
-                    <div style=" height:265px; overflow:auto; margin-top:20px;">
-                        <table class="table" border="0" style="width: -webkit-fill-available;">
-                            <tr>
-                                <th>Time</th>
-                                <th>{{ ctrl.filesData[0].filename }}</th>
-                                <th>{{ ctrl.filesData[1].filename }}</th>
-                            </tr>
-                            <tr id="discrepancy_{{$index}}"
-                                ng-repeat="discrepancy in (ctrl.filteredDiscrepancies = (ctrl.discrepancies |mulSearch: searchDiscrepancy)) track by $index ">
-                                <td><a ng-click="ctrl.discrepancyService.playDiscrepancy(ctrl, discrepancy)" style="cursor: pointer">
-                                    {{ discrepancy.startDisp }} - {{ discrepancy.endDisp }}</a>
-                                </td>
-
-                                <td style="cursor:pointer"
-                                    ng-class="{'discrepancy-selected': discrepancy.choice==='old'}"
-                                    ng-click="discrepancy.choice = discrepancy.choice === 'old' ? undefined : 'old'">
-                                    <span ng-show="discrepancy.choice === 'old'"
-                                          style="color:green;">&#10004;</span>
-                                    {{ discrepancy.oldText }}
-                                </td>
-
-                                <td style="cursor:pointer"
-                                    ng-class="{'discrepancy-selected': discrepancy.choice==='new'}"
-                                    ng-click="discrepancy.choice = discrepancy.choice === 'new' ? undefined : 'new'">
-                                    <span ng-show="discrepancy.choice === 'new'"
-                                          style="color:green;">&#10004;</span>
-                                    {{ discrepancy.newText }}
-                                </td>
-                            </tr>
-                        </table>
-                    </div>
+                    <comparsion 
+                        parent="ctrl"
+                        discrepancies="ctrl.discrepancies">
+                    </comparsion>
                 </div>
             </div>
         </div>
@@ -522,7 +477,7 @@
                     ng-class="{stretched: !ctrl.userConfig.showSegmentLabeling || (ctrl.discrepancies && !ctrl.userConfig.showTranscriptDifferences)}">
                 <div class="panel panel-default" ng-class="{'selected-file': $index === ctrl.selectedFileIndex}">
                     <div class="panel-heading" style="display: flex; justify-content: space-between; align-items: center;">
-                        <h3 class="panel-title">File: {{ file.filename }}</h3>
+                        <h3 class="panel-title transcript__filename" title="{{ file.filename }}">File: {{ file.filename }}</h3>
                         <button type="button" class="btn btn-info btn-sm" ng-click="ctrl.toggleTextPanel(file.filename)" style="margin-right: 16px;">
                             <span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
                         </button>
@@ -534,10 +489,11 @@
                         <!--                <p ng-show="ctrl.currentRegions[$index]">Time: {{ctrl.currentRegions[$index].start | number : 2}} - {{ctrl.currentRegions[$index].end | number : 2}}-->
                         <!--                    ({{ ctrl.currentRegions[$index].end - ctrl.currentRegions[$index].start | number : 2}})</p>-->
                         <editable-words 
-                            ng-if="ctrl.currentRegions[$index] && !ctrl.currentRegions[$index].data.isDummy"
+                            ng-show="ctrl.currentRegions[$index] && !ctrl.currentRegions[$index].data.isDummy"
                             region="ctrl.currentRegions[$index]"
                             file-index="$index"
                             class="editable-words"
+                            control="ctrl"
                         >
                         </editable-words>
                     </div>
@@ -565,10 +521,8 @@
                 </div>
                 <div class="panel-body" style="min-height:650px; max-height: 650px;overflow-y: scroll;">
                     <proof-reading-view
-                        control="ctrl"
-                        regions="ctrl.allRegions[$index]"
+                        regions="ctrl.mergedRegions[$index]"
                         selected-region="ctrl.selectedRegion"
-                        legend="file.legend"
                         file-index="$index"
                     >
                     </proof-reading-view>

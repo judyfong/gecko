@@ -22,6 +22,36 @@ class dataManager {
         a.dispatchEvent(e);
     }
 
+    async saveToPresigned(data, { url }) {
+        try {
+            const resp = await this.$http({
+                method: 'PUT',
+                url,
+                data
+            })
+
+            if (resp && resp.status === 200) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success',
+                    text: `File successefully uploaded`
+                })
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Upload error',
+                    text: resp.data.error
+                })
+            }
+        } catch (e) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Upload error',
+                text: e.statusText
+            })
+        }
+    }
+
     async saveDataToServer(data, { filename, s3Subfolder }) {
         const spl = filename.split('.')
         const ext = spl.pop()
@@ -38,9 +68,6 @@ class dataManager {
             const resp = await this.$http({
                 method: 'POST',
                 url:  '/upload_s3',
-                headers: {
-                    'Access-Control-Allow-Origin': true
-                },
                 data: {
                     filename: timestampedS3Filename,
                     data
@@ -51,9 +78,6 @@ class dataManager {
                 const respSecond = await this.$http({
                     method: 'POST',
                     url:  '/upload_s3',
-                    headers: {
-                        'Access-Control-Allow-Origin': true
-                    },
                     data: {
                         filename: s3Filename,
                         data
@@ -112,7 +136,7 @@ class dataManager {
             console.error('Audio loading error', e)
         }));
 
-        config.ctms.forEach((ctm) => {
+        config.transcripts.forEach((ctm) => {
             let s3Subfolder = null
             /* for s3 proxy */
             if (ctm.url.includes('s3_files')) {
@@ -129,10 +153,7 @@ class dataManager {
             }).then((response) => {
                 const addedFile = {
                     filename: ctm.fileName,
-                    data: response.data,
-                    headers: {
-                        'Access-Control-Allow-Origin': true
-                    }
+                    data: response.data
                 }
                 if (s3Subfolder) {
                     addedFile.s3Subfolder = s3Subfolder
