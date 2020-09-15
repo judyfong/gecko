@@ -30,7 +30,8 @@ export const convert = (app, fileIndex) => {
                 data.push(`SPEAKER <NA> 1 ${region.start.toFixed(3)} ${(region.end.toFixed(3) - region.start.toFixed(3)).toFixed(3)} <NA> <NA> ${speakerId} <NA> <NA>`)
             }
         }   else {
-            speaker = [region.data.speaker[0].split(',')[0]] //speakerId may contain comma because of CSV conversion
+            //speakerId may contain comma because of CSV conversion
+            speaker = region.data.speaker.length === 0 ? region.data.speaker : [region.data.speaker[0].split(',')[0]];
             data.push(`SPEAKER <NA> 1 ${region.start.toFixed(3)} ${(region.end.toFixed(3) - region.start.toFixed(3)).toFixed(3)} <NA> <NA> ${self.formatSpeaker(speaker)} <NA> <NA>`)
         }
     }, fileIndex, true);
